@@ -5,14 +5,28 @@ with their associated links.
 # 2023-05-23
 
 
+import json
+import re
 from concurrent import futures
+from functools import cache
+from pprint import pprint
 from typing import FrozenSet, Optional, Set
 
 import requests
-from common import USER_AGENT
+from common import NAMESPACES_PATTERN, USER_AGENT
 from requests import Response
 from requests.exceptions import HTTPError
 from rich.progress import track
+
+
+def mediawiki_api_parse(page_title: str, prop: str) -> Response:
+    request_url = "https://en.wikipedia.org/w/api.php"
+
+    params = {"action": "parse", "page": page_title, "format": "json", "prop": prop}
+
+    reply = requests.get(request_url, params=params)
+
+    return reply
 
 
 def get_top_articles(year: int, month: int, day: Optional[int] = None) -> Response:
@@ -85,11 +99,74 @@ def get_all_top_article_titles():
     return all_articles
 
 
-def main():
+@cache
+def slugify_wiki_title(title: str) -> str:
+    return re.sub(r"\s+", "_", title)
+
+
+def save_titles():
     articles_list = [article.strip() + "\n" for article in get_all_top_article_titles()]
 
     with open("article_titles.txt", "w") as outfile:
         outfile.writelines(sorted(articles_list))
+
+
+@cache
+def is_special_page_type(page_title: str) -> bool:
+    return re.match(NAMESPACES_PATTERN, page_title) is not None
+
+
+def get_page_links(page_title: str) -> FrozenSet[str]:
+    reply = mediawiki_api_parse(slugify_wiki_title(page_title), "links")
+
+    reply.raise_for_status()
+
+    reply_json = reply.json()
+
+    link_data = reply_json["parse"]["links"]
+
+    linked_page_titles: list[str] = [
+        slugify_wiki_title(title)
+        for datum in link_data
+        if (title := datum.get("*")) is not None and not is_special_page_type(title)
+    ]
+
+    return frozenset(linked_page_titles)
+
+
+def save_page_links(input_filename: str = "./article_titles.txt", n: int | None = None):
+    with open(input_filename, "r") as infile:
+        linked_pages = [line.strip() for line in infile.readlines()]
+
+    if n is not None:
+        linked_pages = linked_pages[:n]
+
+    link_results: dict[str, list[str]] = {}
+
+    with futures.ProcessPoolExecutor() as executor:
+        link_futures = {
+            executor.submit(get_page_links, name): name for name in linked_pages
+        }
+
+        for completed_task in track(
+            futures.as_completed(link_futures.keys()), total=len(link_futures)
+        ):
+            if completed_task.exception() is not None:
+                print(completed_task.exception())
+                continue
+
+            link_key = link_futures[completed_task]
+
+            link_results[link_key] = list(completed_task.result())
+
+    with open("pages.json", "w") as outfile:
+        json.dump(link_results, outfile, indent=4)
+
+    return link_results
+
+
+def main():
+    pprint(save_page_links(n=20))
 
 
 if __name__ == "__main__":
