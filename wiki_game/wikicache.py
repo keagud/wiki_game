@@ -119,7 +119,7 @@ def is_special_page_type(page_title: str) -> bool:
     return re.match(NAMESPACES_PATTERN, page_title) is not None
 
 
-def get_page_links(page_title: str) -> FrozenSet[str]:
+def get_page_links_http(page_title: str) -> FrozenSet[str]:
     reply = mediawiki_api_parse(slugify_wiki_title(page_title), "links")
 
     reply.raise_for_status()
@@ -148,7 +148,7 @@ def iter_page_links(
 
     with futures.ProcessPoolExecutor() as executor:
         link_futures = {
-            executor.submit(get_page_links, name): name for name in linked_pages
+            executor.submit(get_page_links_http, name): name for name in linked_pages
         }
 
         for completed_task in track(

@@ -2,6 +2,7 @@ import sqlite3
 from pathlib import Path
 from typing import Final, Optional
 
+from common import PAGES_DB, debug_print
 from wikicache import PageLinks, iter_page_links
 
 
@@ -20,7 +21,7 @@ class DbWriter:
         ignore_duplicate: bool = True,
     ) -> None:
         if db_path is None:
-            db_path = Path(__file__).parent.joinpath("pages.db")
+            db_path = PAGES_DB
         else:
             db_path = Path(db_path)
 
@@ -77,7 +78,7 @@ class DbWriter:
         new_table_id = self.next_id
 
         command = self.new_link_table_query.format(table_id=new_table_id)
-        print(f"Fetching '{page.title}'", end="...")
+        debug_print(f"Fetching '{page.title}'", end="...")
         self.connection.execute(command)
 
         insert_data = [(link_str,) for link_str in page.links]
@@ -86,7 +87,7 @@ class DbWriter:
             f"INSERT INTO _{new_table_id} (link) VALUES (?)", insert_data
         )
 
-        print("\tOK")
+        debug_print("\tOK")
         self.connection.execute(
             self.page_insert_query,
             (
@@ -98,12 +99,60 @@ class DbWriter:
         self.connection.commit()
         print(f"Wrote to _{new_table_id}")
 
+    def get_link_table_id(self, query_title: str) -> Optional[int]:
+        query_command = """
+            SELECT links_table_id
+                FROM page_mapping
+                WHERE page_title = ?
+            """
+        query_cursor = self.connection.execute(query_command, (query_title,))
 
-def main():
+        result: Optional[tuple[int]] = query_cursor.fetchone()
+        query_cursor.close()
+
+        return result[0] if result is not None else None
+
+    def fetch_page_db_links(self, query_title: str) -> Optional[list[str]]:
+        page_links_table_id = self.get_link_table_id(query_title)
+
+        if page_links_table_id is None:
+            return None
+
+        page_links_table_name = f"_{page_links_table_id}"
+        link_query = f"""
+            SELECT name FROM sqlite_master
+                WHERE type='table'
+                AND name='{page_links_table_name}';
+            """
+
+        query_cursor = self.connection.execute(link_query)
+
+        table_name_result: Optional[tuple[str]] = query_cursor.fetchone()
+
+        debug_print(f"Matched {query_title} to table id {table_name_result}")
+
+        if table_name_result is None:
+            return None
+
+        # I know... interpolation for queries is insecure
+        # But this db doesn't have anything that's not already
+        # publicly available via the wikimedia api,
+        # and there's no better way
+        # to programmatically select from a table
+        links_cursor = self.connection.execute(
+            f"SELECT link FROM {table_name_result[0]}"
+        )
+
+        link_contents = links_cursor.fetchall()
+
+        return [row[0] for row in link_contents]
+
+
+def make_db():
     with DbWriter() as db:
         for p in iter_page_links():
             db.write_page_data(p)
 
 
 if __name__ == "__main__":
-    main()
+    pass
