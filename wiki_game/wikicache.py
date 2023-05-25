@@ -5,18 +5,21 @@ with their associated links.
 # 2023-05-23
 
 
-import json
 import re
 from concurrent import futures
 from functools import cache
-from pprint import pprint
-from typing import FrozenSet, Optional, Set
+from typing import FrozenSet, Iterator, NamedTuple, Optional, Set
 
 import requests
 from common import NAMESPACES_PATTERN, USER_AGENT
 from requests import Response
 from requests.exceptions import HTTPError
 from rich.progress import track
+
+
+class PageLinks(NamedTuple):
+    title: str
+    links: FrozenSet[str]
 
 
 def mediawiki_api_parse(page_title: str, prop: str) -> Response:
@@ -134,14 +137,14 @@ def get_page_links(page_title: str) -> FrozenSet[str]:
     return frozenset(linked_page_titles)
 
 
-def save_page_links(input_filename: str = "./article_titles.txt", n: int | None = None):
+def iter_page_links(
+    input_filename: str = "./article_titles.txt", n: int | None = None
+) -> Iterator[PageLinks]:
     with open(input_filename, "r") as infile:
         linked_pages = [line.strip() for line in infile.readlines()]
 
     if n is not None:
         linked_pages = linked_pages[:n]
-
-    link_results: dict[str, list[str]] = {}
 
     with futures.ProcessPoolExecutor() as executor:
         link_futures = {
@@ -157,17 +160,4 @@ def save_page_links(input_filename: str = "./article_titles.txt", n: int | None 
 
             link_key = link_futures[completed_task]
 
-            link_results[link_key] = list(completed_task.result())
-
-    with open("pages.json", "w") as outfile:
-        json.dump(link_results, outfile, indent=4)
-
-    return link_results
-
-
-def main():
-    pprint(save_page_links(n=20))
-
-
-if __name__ == "__main__":
-    main()
+            yield (PageLinks(link_key, completed_task.result()))

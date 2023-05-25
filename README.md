@@ -2,6 +2,4 @@
 
 Find the shortest path between two wikipedia articles
 
-* TODO
-
 
