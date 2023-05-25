@@ -1,5 +1,6 @@
 import re
 from pathlib import Path
+from pprint import pprint
 from typing import Final
 
 _DEBUG = True
@@ -35,6 +36,15 @@ PAGES_DB: Final[Path] = Path(__file__).parent.joinpath("pages.db")
 PATHS_DB: Final[Path] = PAGES_DB.parent.joinpath("paths.db")
 
 
-def debug_print(*args, **kwargs):
-    if _DEBUG:
-        print(*args, **kwargs)
+def debug_print(
+    *args,
+    pretty=False,
+    **kwargs,
+):
+    if not _DEBUG:
+        return
+    if pretty:
+        pprint(*args, **kwargs)
+        return
+
+    print(*args, **kwargs)

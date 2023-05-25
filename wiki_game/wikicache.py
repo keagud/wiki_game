@@ -11,7 +11,7 @@ from functools import cache
 from typing import FrozenSet, Iterator, NamedTuple, Optional, Set
 
 import requests
-from common import NAMESPACES_PATTERN, USER_AGENT
+from common import NAMESPACES_PATTERN, USER_AGENT, debug_print
 from requests import Response
 from requests.exceptions import HTTPError
 from rich.progress import track
@@ -126,7 +126,13 @@ def get_page_links_http(page_title: str) -> FrozenSet[str]:
 
     reply_json = reply.json()
 
-    link_data = reply_json["parse"]["links"]
+    parse_reply = reply_json.get("parse")
+
+    if parse_reply is None:
+        debug_print(f"FAILED: {slugify_wiki_title(page_title)}")
+        raise HTTPError
+
+    link_data = parse_reply["links"]
 
     linked_page_titles: list[str] = [
         slugify_wiki_title(title)
